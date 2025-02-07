@@ -1,10 +1,13 @@
 from flask import Flask, request, jsonify
 import sqlite3
-import bcrypt  # Library for hashing passwords
+import bcrypt
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 app = Flask(__name__)
-CORS(app)  # Allow frontend requests
+app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a secure key
+jwt = JWTManager(app)
+CORS(app)
 
 # Connect to SQLite database
 def get_db_connection():
@@ -34,7 +37,6 @@ def signup():
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
 
-    # Hash the password
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
     try:
@@ -42,7 +44,10 @@ def signup():
         conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
         conn.commit()
         conn.close()
-        return jsonify({"message": "User registered successfully"}), 201
+
+        # Generate JWT Token
+        access_token = create_access_token(identity=username)
+        return jsonify({"message": "User registered successfully", "token": access_token}), 201
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists"}), 409
 
@@ -58,9 +63,17 @@ def login():
     conn.close()
 
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-        return jsonify({"message": "Login successful"}), 200
+        access_token = create_access_token(identity=username)
+        return jsonify({"message": "Login successful", "token": access_token}), 200
     else:
         return jsonify({"error": "Invalid username or password"}), 401
+
+# Protected route (Only logged-in users can access this)
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()
+    return jsonify({"message": f"Hello {current_user}, this is a protected route!"})
 
 if __name__ == '__main__':
     app.run(debug=True)
