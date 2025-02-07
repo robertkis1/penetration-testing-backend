@@ -75,5 +75,14 @@ def protected():
     current_user = get_jwt_identity()
     return jsonify({"message": f"Hello {current_user}, this is a protected route!"})
 
+# API to show registered users (for debugging)
+@app.route('/show-users', methods=['GET'])
+def show_users():
+    conn = get_db_connection()
+    users = conn.execute("SELECT id, username FROM users").fetchall()
+    conn.close()
+
+    return jsonify([dict(row) for row in users])
+
 if __name__ == '__main__':
     app.run(debug=True)
