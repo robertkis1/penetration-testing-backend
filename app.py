@@ -1,9 +1,10 @@
 from flask import Flask, request, jsonify
 import sqlite3
+import bcrypt  # Library for hashing passwords
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Allows frontend requests
+CORS(app)  # Allow frontend requests
 
 # Connect to SQLite database
 def get_db_connection():
@@ -11,43 +12,55 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Create table if not exists
-def create_table():
+# Create users table
+def create_user_table():
     conn = get_db_connection()
-    conn.execute('''CREATE TABLE IF NOT EXISTS scans (
+    conn.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    target TEXT,
-                    result TEXT)''')
+                    username TEXT UNIQUE,
+                    password TEXT)''')
     conn.commit()
     conn.close()
 
-create_table()
+create_user_table()
 
-# API to run a vulnerability scan (Mock)
-@app.route('/scan', methods=['POST'])
-def scan():
+# API for user signup
+@app.route('/signup', methods=['POST'])
+def signup():
     data = request.json
-    target = data.get('target', '')
+    username = data.get('username', '')
+    password = data.get('password', '')
 
-    # Mock scan logic (replace with real pentesting logic)
-    scan_result = f"Scan completed for {target}, no vulnerabilities found."
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
 
-    # Store result in SQLite
+    # Hash the password
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+    try:
+        conn = get_db_connection()
+        conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "User registered successfully"}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Username already exists"}), 409
+
+# API for user login
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username', '')
+    password = data.get('password', '')
+
     conn = get_db_connection()
-    conn.execute("INSERT INTO scans (target, result) VALUES (?, ?)", (target, scan_result))
-    conn.commit()
+    user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     conn.close()
 
-    return jsonify({"message": "Scan completed", "result": scan_result})
-
-# API to get scan results
-@app.route('/results', methods=['GET'])
-def get_results():
-    conn = get_db_connection()
-    scans = conn.execute("SELECT * FROM scans").fetchall()
-    conn.close()
-
-    return jsonify([dict(row) for row in scans])
+    if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
+        return jsonify({"message": "Login successful"}), 200
+    else:
+        return jsonify({"error": "Invalid username or password"}), 401
 
 if __name__ == '__main__':
     app.run(debug=True)
