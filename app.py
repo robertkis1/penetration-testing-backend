@@ -153,22 +153,24 @@ def protected():
     return jsonify({"message": f"Hello {current_user['username']}, this is a protected route!"})
 
 # Admin-only API to show registered users
-@app.route('/show-users', methods=['GET'])
-@admin_required
-def show_users():
-    try:
-        current_user = get_jwt_identity()  # Get the current user identity
-        logging.info(f"Admin user accessing /show-users: {current_user}")  # Log who is accessing
+SECRET_ADMIN_KEY = "a1f47c8de93d61eb6c1d93cf7e5b0f34f9d85e8d5a3a1b88e623a7c1c4b5e7e9"
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
-        conn.close()
-        
-        return jsonify([dict(row) for row in users]), 200
-    except Exception as e:
-        logging.error(f"Failed to fetch users: {e}")
-        return jsonify({"error": "Internal Server Error"}), 500
+@app.route('/show-users', methods=['GET'])
+def show_users():
+    # Read the Admin Key from request headers
+    admin_key = request.headers.get("X-Admin-Key")
+
+    # Check if the provided key is correct
+    if admin_key != SECRET_ADMIN_KEY:
+        return jsonify({"error": "Unauthorized - Invalid Admin Key"}), 403
+
+    # Fetch users from the database
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
+    conn.close()
+
+    return jsonify([dict(row) for row in users])
 
 # Admin-only API to show all penetration testing reports
 @app.route('/all-reports', methods=['GET'])
