@@ -152,11 +152,16 @@ def protected():
 @app.route('/show-users', methods=['GET'])
 @admin_required
 def show_users():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
-    conn.close()
-    return jsonify([dict(row) for row in users])
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
+        conn.close()
+        
+        return jsonify([dict(row) for row in users]), 200
+    except Exception as e:
+        logging.error(f"Failed to fetch users: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
 
 # Admin-only API to show all penetration testing reports
 @app.route('/all-reports', methods=['GET'])
