@@ -62,8 +62,12 @@ def admin_required(fn):
     @jwt_required()
     def wrapper(*args, **kwargs):
         current_user = get_jwt_identity()
-        if current_user["role"] != "admin":
+        logging.info(f"Checking admin access for user: {current_user}")  # Log user role
+
+        if isinstance(current_user, dict) and current_user.get("role") != "admin":
+            logging.warning(f"Access denied for non-admin user: {current_user}")
             return jsonify({"error": "Access denied. Admins only."}), 403
+
         return fn(*args, **kwargs)
     return wrapper
 
