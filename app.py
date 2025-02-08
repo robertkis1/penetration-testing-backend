@@ -17,28 +17,48 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Check and update database schema dynamically
+# Create users table if it doesn't exist
+def create_user_table():
+    conn = get_db_connection()
+    conn.execute('''CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE,
+                    password TEXT,
+                    name TEXT,
+                    email TEXT UNIQUE,
+                    role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user'
+                    )''')
+    conn.commit()
+    conn.close()
+
+# Check if table exists before altering it
 def update_database_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if 'name' column exists
-    cursor.execute("PRAGMA table_info(users)")
-    existing_columns = [col[1] for col in cursor.fetchall()]
+    # Check if users table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+    table_exists = cursor.fetchone()
+
+    if table_exists:
+        cursor.execute("PRAGMA table_info(users)")
+        existing_columns = [col[1] for col in cursor.fetchall()]
+
+        if "name" not in existing_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN name TEXT;")
+        
+        if "email" not in existing_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE;")
+        
+        if "role" not in existing_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user';")
+        
+        conn.commit()
     
-    if "name" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN name TEXT;")
-    
-    if "email" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE;")
-    
-    if "role" not in existing_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user';")
-    
-    conn.commit()
     conn.close()
 
-# Ensure database is updated on startup
+# Ensure the database and tables are set up correctly
+create_user_table()
 update_database_schema()
 
 # Middleware to check if user is admin
