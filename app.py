@@ -11,7 +11,7 @@ from functools import wraps
 app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a secure key
 jwt = JWTManager(app)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)  # Updated CORS config
 
 # Enable Logging for Debugging
 logging.basicConfig(level=logging.DEBUG)
