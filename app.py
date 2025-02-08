@@ -153,7 +153,9 @@ def protected():
 @admin_required
 def show_users():
     try:
-        logging.info("Admin user accessing /show-users")  # Debug log
+        current_user = get_jwt_identity()  # Get the current user identity
+        logging.info(f"Admin user accessing /show-users: {current_user}")  # Log who is accessing
+
         conn = get_db_connection()
         cursor = conn.cursor()
         users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
