@@ -2,14 +2,19 @@ from flask import Flask, request, jsonify
 import sqlite3
 import bcrypt
 import os
+import logging
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
 
+# Initialize Flask App
 app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a secure key
 jwt = JWTManager(app)
 CORS(app)
+
+# Enable Logging for Debugging
+logging.basicConfig(level=logging.DEBUG)
 
 # Connect to SQLite database with better locking prevention
 def get_db_connection():
@@ -32,35 +37,8 @@ def create_user_table():
     conn.commit()
     conn.close()
 
-# Check if table exists before altering it
-def update_database_schema():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    # Check if users table exists
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
-    table_exists = cursor.fetchone()
-
-    if table_exists:
-        cursor.execute("PRAGMA table_info(users)")
-        existing_columns = [col[1] for col in cursor.fetchall()]
-
-        if "name" not in existing_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN name TEXT;")
-        
-        if "email" not in existing_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN email TEXT UNIQUE;")
-        
-        if "role" not in existing_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user';")
-        
-        conn.commit()
-    
-    conn.close()
-
 # Ensure the database and tables are set up correctly
 create_user_table()
-update_database_schema()
 
 # Middleware to check if user is admin
 def admin_required(fn):
@@ -78,13 +56,16 @@ def admin_required(fn):
 def signup():
     try:
         data = request.json
-        username = data.get('username', '')
-        password = data.get('password', '')
-        name = data.get('name', '')
-        email = data.get('email', '')
-        role = data.get('role', 'user')  # Default role is 'user'
+        logging.info(f"Received signup request: {data}")  # Debugging log
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip()
+        role = data.get('role', 'user').strip()  # Default role is 'user'
 
         if not username or not password or not name or not email:
+            logging.warning("Signup failed: Missing fields")
             return jsonify({"error": "All fields are required"}), 400
 
         # Hash password
@@ -98,38 +79,46 @@ def signup():
                      (username, hashed_password, name, email, role))
         conn.commit()
 
-        # Close connection properly
         cursor.close()
         conn.close()
 
         # Generate JWT Token
         access_token = create_access_token(identity={"username": username, "role": role})
+        logging.info(f"User {username} registered successfully with role {role}")
         return jsonify({"message": "User registered successfully", "token": access_token}), 201
 
-    except sqlite3.OperationalError as e:
-        return jsonify({"error": "Database is locked, please try again later."}), 500
-
     except sqlite3.IntegrityError:
+        logging.error("Signup failed: Username or email already exists")
         return jsonify({"error": "Username or Email already exists"}), 409
+
+    except Exception as e:
+        logging.error(f"Signup failed: {e}")
+        return jsonify({"error": f"Internal Server Error: {e}"}), 500
 
 # API for user login
 @app.route('/login', methods=['POST'])
 def login():
     try:
         data = request.json
-        username = data.get('username', '')
-        password = data.get('password', '')
+        logging.info(f"Received login request: {data}")
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
 
         conn = get_db_connection()
         cursor = conn.cursor()
         user = cursor.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
         if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-            # Generate JWT token with role information
             access_token = create_access_token(identity={"username": username, "role": user["role"]})
+            logging.info(f"User {username} logged in successfully")
             return jsonify({"message": "Login successful", "token": access_token}), 200
         else:
+            logging.warning("Login failed: Invalid credentials")
             return jsonify({"error": "Invalid username or password"}), 401
+    except Exception as e:
+        logging.error(f"Login failed: {e}")
+        return jsonify({"error": f"Internal Server Error: {e}"}), 500
     finally:
         cursor.close()
         conn.close()
@@ -139,6 +128,7 @@ def login():
 @jwt_required()
 def protected():
     current_user = get_jwt_identity()
+    logging.info(f"Protected route accessed by {current_user['username']}")
     return jsonify({"message": f"Hello {current_user['username']}, this is a protected route!"})
 
 # Admin-only API to show registered users
