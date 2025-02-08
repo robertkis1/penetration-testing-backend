@@ -11,16 +11,17 @@ app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a secure key
 jwt = JWTManager(app)
 CORS(app)
 
-# Connect to SQLite database
+# Connect to SQLite database with better locking prevention
 def get_db_connection():
-    conn = sqlite3.connect('scans.db')
+    conn = sqlite3.connect('scans.db', check_same_thread=False, timeout=10)  # Prevents database locking
     conn.row_factory = sqlite3.Row
     return conn
 
 # Create users table if it doesn't exist
 def create_user_table():
     conn = get_db_connection()
-    conn.execute('''CREATE TABLE IF NOT EXISTS users (
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE,
                     password TEXT,
@@ -75,49 +76,63 @@ def admin_required(fn):
 # API for user signup
 @app.route('/signup', methods=['POST'])
 def signup():
-    data = request.json
-    username = data.get('username', '')
-    password = data.get('password', '')
-    name = data.get('name', '')
-    email = data.get('email', '')
-    role = data.get('role', 'user')  # Default role is 'user'
-
-    if not username or not password or not name or not email:
-        return jsonify({"error": "All fields are required"}), 400
-
-    # Hash password
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
     try:
+        data = request.json
+        username = data.get('username', '')
+        password = data.get('password', '')
+        name = data.get('name', '')
+        email = data.get('email', '')
+        role = data.get('role', 'user')  # Default role is 'user'
+
+        if not username or not password or not name or not email:
+            return jsonify({"error": "All fields are required"}), 400
+
+        # Hash password
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
         conn = get_db_connection()
-        conn.execute("INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)",
+        cursor = conn.cursor()
+
+        # Insert user safely
+        cursor.execute("INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)",
                      (username, hashed_password, name, email, role))
         conn.commit()
+
+        # Close connection properly
+        cursor.close()
         conn.close()
 
         # Generate JWT Token
         access_token = create_access_token(identity={"username": username, "role": role})
         return jsonify({"message": "User registered successfully", "token": access_token}), 201
+
+    except sqlite3.OperationalError as e:
+        return jsonify({"error": "Database is locked, please try again later."}), 500
+
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username or Email already exists"}), 409
 
 # API for user login
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
-    username = data.get('username', '')
-    password = data.get('password', '')
+    try:
+        data = request.json
+        username = data.get('username', '')
+        password = data.get('password', '')
 
-    conn = get_db_connection()
-    user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    conn.close()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        user = cursor.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
-    if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-        # Generate JWT token with role information
-        access_token = create_access_token(identity={"username": username, "role": user["role"]})
-        return jsonify({"message": "Login successful", "token": access_token}), 200
-    else:
-        return jsonify({"error": "Invalid username or password"}), 401
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
+            # Generate JWT token with role information
+            access_token = create_access_token(identity={"username": username, "role": user["role"]})
+            return jsonify({"message": "Login successful", "token": access_token}), 200
+        else:
+            return jsonify({"error": "Invalid username or password"}), 401
+    finally:
+        cursor.close()
+        conn.close()
 
 # Protected route (Only logged-in users can access this)
 @app.route('/protected', methods=['GET'])
@@ -131,7 +146,8 @@ def protected():
 @admin_required
 def show_users():
     conn = get_db_connection()
-    users = conn.execute("SELECT id, username, name, email, role FROM users").fetchall()
+    cursor = conn.cursor()
+    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
     conn.close()
     return jsonify([dict(row) for row in users])
 
@@ -140,7 +156,8 @@ def show_users():
 @admin_required
 def all_reports():
     conn = get_db_connection()
-    reports = conn.execute("SELECT * FROM scan_reports").fetchall()  # Assuming scan_reports table exists
+    cursor = conn.cursor()
+    reports = cursor.execute("SELECT * FROM scan_reports").fetchall()  # Assuming scan_reports table exists
     conn.close()
     return jsonify([dict(row) for row in reports])
 
