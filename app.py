@@ -3,6 +3,7 @@ import sqlite3
 import bcrypt
 import os
 import logging
+import traceback
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
@@ -37,8 +38,23 @@ def create_user_table():
     conn.commit()
     conn.close()
 
+# Create scan_reports table if it doesn't exist
+def create_reports_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS scan_reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT,
+                        description TEXT,
+                        status TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                      )''')
+    conn.commit()
+    conn.close()
+
 # Ensure the database and tables are set up correctly
 create_user_table()
+create_reports_table()
 
 # Middleware to check if user is admin
 def admin_required(fn):
@@ -92,12 +108,15 @@ def signup():
         return jsonify({"error": "Username or Email already exists"}), 409
 
     except Exception as e:
-        logging.error(f"Signup failed: {e}")
-        return jsonify({"error": f"Internal Server Error: {e}"}), 500
+        logging.error(f"Signup failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
 
 # API for user login
 @app.route('/login', methods=['POST'])
 def login():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
     try:
         data = request.json
         logging.info(f"Received login request: {data}")
@@ -105,8 +124,6 @@ def login():
         username = data.get('username', '').strip()
         password = data.get('password', '').strip()
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
         user = cursor.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
         if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
@@ -117,8 +134,8 @@ def login():
             logging.warning("Login failed: Invalid credentials")
             return jsonify({"error": "Invalid username or password"}), 401
     except Exception as e:
-        logging.error(f"Login failed: {e}")
-        return jsonify({"error": f"Internal Server Error: {e}"}), 500
+        logging.error(f"Login failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
     finally:
         cursor.close()
         conn.close()
@@ -147,7 +164,7 @@ def show_users():
 def all_reports():
     conn = get_db_connection()
     cursor = conn.cursor()
-    reports = cursor.execute("SELECT * FROM scan_reports").fetchall()  # Assuming scan_reports table exists
+    reports = cursor.execute("SELECT * FROM scan_reports").fetchall()
     conn.close()
     return jsonify([dict(row) for row in reports])
 
