@@ -153,6 +153,7 @@ def protected():
 @admin_required
 def show_users():
     try:
+        logging.info("Admin user accessing /show-users")  # Debug log
         conn = get_db_connection()
         cursor = conn.cursor()
         users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
