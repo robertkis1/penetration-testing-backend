@@ -177,6 +177,48 @@ def login():
         logging.error(f"Login error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+@app.route('/update-user/<int:user_id>', methods=['PUT'])
+def update_user(user_id):
+    try:
+        data = request.json
+        logging.info(f"Received update request for user ID {user_id}: {data}")
+
+        if not data:
+            return jsonify({"error": "Request body is missing"}), 400
+
+        username = data.get('username', '').strip()
+        name = data.get('name', '').strip()
+        email = data.get('email', '').strip()
+        role = data.get('role', '').strip()
+
+        if not username or not name or not email or not role:
+            return jsonify({"error": "All fields are required"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Check if user exists
+        existing_user = cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not existing_user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Update user details
+        cursor.execute("""
+            UPDATE users
+            SET username = ?, name = ?, email = ?, role = ?
+            WHERE id = ?
+        """, (username, name, email, role, user_id))
+
+        conn.commit()
+        conn.close()
+
+        logging.info(f"User {user_id} updated successfully.")
+        return jsonify({"message": "User updated successfully"}), 200
+
+    except Exception as e:
+        logging.error(f"Error updating user: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)
