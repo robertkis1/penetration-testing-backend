@@ -135,5 +135,34 @@ def signup():
         logging.error(f"Signup failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
 
+# API for user login
+@app.route('/login', methods=['POST'])
+def login():
+    try:
+        data = request.json
+        email = data.get('email', '').strip()
+        password = data.get('password', '').strip()
+
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Fetch user by email
+        user = cursor.execute("SELECT id, username, password, role FROM users WHERE email = ?", (email,)).fetchone()
+        conn.close()
+
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+            access_token = create_access_token(identity={"username": user["username"], "role": user["role"]})
+            return jsonify({"message": "Login successful", "token": access_token, "role": user["role"]}), 200
+        else:
+            return jsonify({"error": "Invalid credentials"}), 401
+
+    except Exception as e:
+        logging.error(f"Login error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True)
