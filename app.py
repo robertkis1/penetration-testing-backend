@@ -153,15 +153,26 @@ def login():
         user = cursor.execute("SELECT id, username, password, role FROM users WHERE email = ?", (email,)).fetchone()
         conn.close()
 
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):  # Fix is here
+        if not user:
+            logging.warning(f"Login failed: Email {email} not found in database")
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        # Debugging: Print stored password hash and input password
+        stored_password = user["password"]  # Stored in database
+        logging.debug(f"Stored password (hashed): {stored_password}")
+
+        # Ensure bcrypt check works
+        if bcrypt.checkpw(password.encode('utf-8'), stored_password):
             access_token = create_access_token(identity={"username": user["username"], "role": user["role"]})
             return jsonify({"message": "Login successful", "token": access_token, "role": user["role"]}), 200
         else:
-            return jsonify({"error": "Invalid credentials"}), 401
+            logging.warning(f"Login failed: Password mismatch for email {email}")
+            return jsonify({"error": "Invalid email or password"}), 401
 
     except Exception as e:
         logging.error(f"Login error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
+
 
 
 if __name__ == '__main__':
