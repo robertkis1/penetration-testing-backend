@@ -136,6 +136,7 @@ def signup():
         return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
 
 # API for user login
+# API for user login
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -157,8 +158,11 @@ def login():
             logging.warning(f"Login failed: Email {email} not found in database")
             return jsonify({"error": "Invalid email or password"}), 401
 
-        # Debugging: Print stored password hash and input password
-        stored_password = user["password"]  # Stored in database
+        # Convert stored password to bytes (important fix)
+        stored_password = user["password"]
+        if isinstance(stored_password, str):
+            stored_password = stored_password.encode("utf-8")  # Convert to bytes if stored as string
+
         logging.debug(f"Stored password (hashed): {stored_password}")
 
         # Ensure bcrypt check works
@@ -172,7 +176,6 @@ def login():
     except Exception as e:
         logging.error(f"Login error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
-
 
 
 if __name__ == '__main__':
