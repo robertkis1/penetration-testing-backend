@@ -153,7 +153,7 @@ def login():
         user = cursor.execute("SELECT id, username, password, role FROM users WHERE email = ?", (email,)).fetchone()
         conn.close()
 
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+        if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):  # Fix is here
             access_token = create_access_token(identity={"username": user["username"], "role": user["role"]})
             return jsonify({"message": "Login successful", "token": access_token, "role": user["role"]}), 200
         else:
