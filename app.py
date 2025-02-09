@@ -56,10 +56,9 @@ create_user_table()
 create_reports_table()
 
 # Health check endpoint
+@app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "connected"}), 200
-
-app.route('/health', methods=['GET'])(health_check)
 
 # Middleware to check if user is admin
 def admin_required(fn):
@@ -75,6 +74,22 @@ def admin_required(fn):
 
         return fn(*args, **kwargs)
     return wrapper
+
+SECRET_ADMIN_KEY = "a1f47c8de93d61eb6c1d93cf7e5b0f34f9d85e8d5a3a1b88e623a7c1c4b5e7e9"
+
+@app.route('/show-users', methods=['GET'])
+def show_users():
+    admin_key = request.headers.get("X-Admin-Key")
+
+    if admin_key != SECRET_ADMIN_KEY:
+        return jsonify({"error": "Unauthorized - Invalid Admin Key"}), 403
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
+    conn.close()
+
+    return jsonify([dict(row) for row in users])
 
 # API for user signup
 @app.route('/signup', methods=['POST'])
@@ -119,35 +134,6 @@ def signup():
     except Exception as e:
         logging.error(f"Signup failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
-
-# API for user login
-@app.route('/login', methods=['POST'])
-def login():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        data = request.json
-        logging.info(f"Received login request: {data}")
-
-        username = data.get('username', '').strip()
-        password = data.get('password', '').strip()
-
-        user = cursor.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-
-        if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
-            access_token = create_access_token(identity={"username": username, "role": user["role"]})
-            logging.info(f"User {username} logged in successfully")
-            return jsonify({"message": "Login successful", "token": access_token}), 200
-        else:
-            logging.warning("Login failed: Invalid credentials")
-            return jsonify({"error": "Invalid username or password"}), 401
-    except Exception as e:
-        logging.error(f"Login failed: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
-    finally:
-        cursor.close()
-        conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True)
