@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import sqlite3
 import bcrypt
-import os
 import logging
 import traceback
 from flask_cors import CORS
@@ -55,6 +54,12 @@ def create_reports_table():
 # Ensure the database and tables are set up correctly
 create_user_table()
 create_reports_table()
+
+# Health check endpoint
+def health_check():
+    return jsonify({"status": "connected"}), 200
+
+app.route('/health', methods=['GET'])(health_check)
 
 # Middleware to check if user is admin
 def admin_required(fn):
@@ -143,44 +148,6 @@ def login():
     finally:
         cursor.close()
         conn.close()
-
-# Protected route (Only logged-in users can access this)
-@app.route('/protected', methods=['GET'])
-@jwt_required()
-def protected():
-    current_user = get_jwt_identity()
-    logging.info(f"Protected route accessed by {current_user['username']}")
-    return jsonify({"message": f"Hello {current_user['username']}, this is a protected route!"})
-
-# Admin-only API to show registered users
-SECRET_ADMIN_KEY = "a1f47c8de93d61eb6c1d93cf7e5b0f34f9d85e8d5a3a1b88e623a7c1c4b5e7e9"
-
-@app.route('/show-users', methods=['GET'])
-def show_users():
-    # Read the Admin Key from request headers
-    admin_key = request.headers.get("X-Admin-Key")
-
-    # Check if the provided key is correct
-    if admin_key != SECRET_ADMIN_KEY:
-        return jsonify({"error": "Unauthorized - Invalid Admin Key"}), 403
-
-    # Fetch users from the database
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
-    conn.close()
-
-    return jsonify([dict(row) for row in users])
-
-# Admin-only API to show all penetration testing reports
-@app.route('/all-reports', methods=['GET'])
-@admin_required
-def all_reports():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    reports = cursor.execute("SELECT * FROM scan_reports").fetchall()
-    conn.close()
-    return jsonify([dict(row) for row in reports])
 
 if __name__ == '__main__':
     app.run(debug=True)
