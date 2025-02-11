@@ -3,7 +3,8 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 import bcrypt
-import jwt
+import jwt  # PyJWT library
+from jwt import encode, decode  # Ensure correct functions are used
 import datetime
 
 # ✅ Define Flask App FIRST
@@ -68,7 +69,7 @@ def login():
     user = User.query.filter_by(email=data['email']).first()
     
     if user and bcrypt.checkpw(data['password'].encode('utf-8'), user.password.encode('utf-8')):
-        token = jwt.encode(
+        token = encode(
             {
                 "user_id": user.id,
                 "role": user.role,
