@@ -6,6 +6,8 @@ import bcrypt
 import jwt  # PyJWT library
 from jwt import encode, decode  # Ensure correct functions are used
 import datetime
+from flask import request
+from functools import wraps
 
 # ✅ Define Flask App FIRST
 app = Flask(__name__)
@@ -114,6 +116,69 @@ def update_profile():
         return jsonify({"message": "Profile updated successfully"}), 200
     
     return jsonify({"message": "User not found"}), 404
+
+from flask import request
+from functools import wraps
+
+# ✅ Function to Verify Admin Token
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get("Authorization")
+
+        if not token:
+            return jsonify({"message": "Missing token"}), 403
+
+        try:
+            token = token.split("Bearer ")[1]  # Extract actual token
+            decoded_token = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+
+            if decoded_token.get("role") != "admin":
+                return jsonify({"message": "Unauthorized"}), 403
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({"message": "Token expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"message": "Invalid token"}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+# ✅ Route for Admin to Create Users
+@app.route('/admin/add-user', methods=['POST'])
+@admin_required
+def add_user():
+    try:
+        data = request.json
+
+        if not all(k in data for k in ['full_name', 'email', 'username', 'password', 'role']):
+            return jsonify({"message": "All fields are required"}), 400
+
+        # ✅ Ensure Email is Unique
+        existing_user = User.query.filter_by(email=data['email']).first()
+        if existing_user:
+            return jsonify({"message": "User already exists"}), 400
+
+        hashed_pw = bcrypt.hashpw(data['password'].encode('utf-8'), bcrypt.gensalt(BCRYPT_LOG_ROUNDS))
+
+        new_user = User(
+            full_name=data['full_name'],
+            email=data['email'],
+            username=data['username'],
+            password=hashed_pw.decode('utf-8'),
+            role=data['role']
+        )
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": "New user created successfully!"}), 201
+    except Exception as e:
+        print("Error creating user:", str(e))
+        return jsonify({"message": "Internal Server Error"}), 500
+
 
 # ✅ Run Flask App
 if __name__ == '__main__':
