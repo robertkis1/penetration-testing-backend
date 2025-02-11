@@ -3,22 +3,23 @@ import sqlite3
 import bcrypt
 import logging
 import traceback
+import os
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
 
 # Initialize Flask App
 app = Flask(__name__)
-app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a secure key
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'fallback-secret-key')
 jwt = JWTManager(app)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)  # Updated CORS config
 
 # Enable Logging for Debugging
 logging.basicConfig(level=logging.DEBUG)
 
-# Connect to SQLite database with better locking prevention
+# Connect to SQLite database
 def get_db_connection():
-    conn = sqlite3.connect('scans.db', check_same_thread=False, timeout=10)  # Prevents database locking
+    conn = sqlite3.connect('scans.db', check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -32,33 +33,16 @@ def create_user_table():
                     password TEXT,
                     name TEXT,
                     email TEXT UNIQUE,
-                    role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user'
+                    role TEXT CHECK(role IN ('user', 'admin')) DEFAULT 'user',
+                    tos_accepted BOOLEAN DEFAULT 0,
+                    privacy_policy BOOLEAN DEFAULT 0,
+                    gdpr BOOLEAN DEFAULT 0
                     )''')
     conn.commit()
     conn.close()
 
-# Create scan_reports table if it doesn't exist
-def create_reports_table():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS scan_reports (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT,
-                        description TEXT,
-                        status TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                      )''')
-    conn.commit()
-    conn.close()
-
-# Ensure the database and tables are set up correctly
+# Ensure the database table exists
 create_user_table()
-create_reports_table()
-
-# Health check endpoint
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "connected"}), 200
 
 # Middleware to check if user is admin
 def admin_required(fn):
@@ -66,7 +50,7 @@ def admin_required(fn):
     @jwt_required()
     def wrapper(*args, **kwargs):
         current_user = get_jwt_identity()
-        logging.info(f"Checking admin access for user: {current_user}")  # Log user role
+        logging.info(f"Checking admin access for user: {current_user}")
 
         if isinstance(current_user, dict) and current_user.get("role") != "admin":
             logging.warning(f"Access denied for non-admin user: {current_user}")
@@ -75,38 +59,27 @@ def admin_required(fn):
         return fn(*args, **kwargs)
     return wrapper
 
-SECRET_ADMIN_KEY = "a1f47c8de93d61eb6c1d93cf7e5b0f34f9d85e8d5a3a1b88e623a7c1c4b5e7e9"
-
-@app.route('/show-users', methods=['GET'])
-def show_users():
-    admin_key = request.headers.get("X-Admin-Key")
-
-    if admin_key != SECRET_ADMIN_KEY:
-        return jsonify({"error": "Unauthorized - Invalid Admin Key"}), 403
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
-    conn.close()
-
-    return jsonify([dict(row) for row in users])
-
-# API for user signup
+# 🟢 User Signup API (Enhanced)
 @app.route('/signup', methods=['POST'])
 def signup():
     try:
         data = request.json
-        logging.info(f"Received signup request: {data}")  # Debugging log
+        logging.info(f"Received signup request: {data}")
 
         username = data.get('username', '').strip()
         password = data.get('password', '').strip()
         name = data.get('name', '').strip()
         email = data.get('email', '').strip()
-        role = data.get('role', 'user').strip()  # Default role is 'user'
+        role = data.get('role', 'user').strip()
+        tos_accepted = data.get('tos_accepted', False)
+        privacy_policy = data.get('privacy_policy', False)
+        gdpr = data.get('gdpr', False)
 
         if not username or not password or not name or not email:
-            logging.warning("Signup failed: Missing fields")
             return jsonify({"error": "All fields are required"}), 400
+
+        if not tos_accepted or not privacy_policy or not gdpr:
+            return jsonify({"error": "You must accept the Terms of Service, Privacy Policy, and GDPR compliance"}), 400
 
         # Hash password
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
@@ -114,29 +87,23 @@ def signup():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Insert user safely
-        cursor.execute("INSERT INTO users (username, password, name, email, role) VALUES (?, ?, ?, ?, ?)",
-                     (username, hashed_password, name, email, role))
+        cursor.execute("INSERT INTO users (username, password, name, email, role, tos_accepted, privacy_policy, gdpr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     (username, hashed_password, name, email, role, tos_accepted, privacy_policy, gdpr))
         conn.commit()
-
-        cursor.close()
         conn.close()
 
-        # Generate JWT Token
-        access_token = create_access_token(identity={"username": username, "role": role})
+        access_token = create_access_token(identity={"username": username, "role": role, "name": name})
         logging.info(f"User {username} registered successfully with role {role}")
         return jsonify({"message": "User registered successfully", "token": access_token}), 201
 
     except sqlite3.IntegrityError:
-        logging.error("Signup failed: Username or email already exists")
         return jsonify({"error": "Username or Email already exists"}), 409
 
     except Exception as e:
         logging.error(f"Signup failed: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": "Internal Server Error. Check logs for details."}), 500
+        return jsonify({"error": "Internal Server Error"}), 500
 
-# API for user login
-# API for user login
+# 🟢 User Login API (Returns Full Name)
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -150,41 +117,42 @@ def login():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Fetch user by email
-        user = cursor.execute("SELECT id, username, password, role FROM users WHERE email = ?", (email,)).fetchone()
+        user = cursor.execute("SELECT id, username, password, name, role FROM users WHERE email = ?", (email,)).fetchone()
         conn.close()
 
         if not user:
-            logging.warning(f"Login failed: Email {email} not found in database")
             return jsonify({"error": "Invalid email or password"}), 401
 
-        # Convert stored password to bytes (important fix)
         stored_password = user["password"]
         if isinstance(stored_password, str):
-            stored_password = stored_password.encode("utf-8")  # Convert to bytes if stored as string
+            stored_password = stored_password.encode("utf-8")
 
-        logging.debug(f"Stored password (hashed): {stored_password}")
-
-        # Ensure bcrypt check works
         if bcrypt.checkpw(password.encode('utf-8'), stored_password):
-            access_token = create_access_token(identity={"username": user["username"], "role": user["role"]})
-            return jsonify({"message": "Login successful", "token": access_token, "role": user["role"]}), 200
+            access_token = create_access_token(identity={"username": user["username"], "role": user["role"], "name": user["name"]})
+            return jsonify({"message": "Login successful", "token": access_token, "role": user["role"], "name": user["name"]}), 200
         else:
-            logging.warning(f"Login failed: Password mismatch for email {email}")
             return jsonify({"error": "Invalid email or password"}), 401
 
     except Exception as e:
-        logging.error(f"Login error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+# 🟢 Get All Users (Admin Only)
+@app.route('/show-users', methods=['GET'])
+@admin_required
+def show_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    users = cursor.execute("SELECT id, username, name, email, role FROM users").fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in users])
+
+# 🟢 Update User Profile
 @app.route('/update-user/<int:user_id>', methods=['PUT'])
+@jwt_required()
 def update_user(user_id):
     try:
         data = request.json
         logging.info(f"Received update request for user ID {user_id}: {data}")
-
-        if not data:
-            return jsonify({"error": "Request body is missing"}), 400
 
         username = data.get('username', '').strip()
         name = data.get('name', '').strip()
@@ -197,12 +165,6 @@ def update_user(user_id):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Check if user exists
-        existing_user = cursor.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
-        if not existing_user:
-            return jsonify({"error": "User not found"}), 404
-
-        # Update user details
         cursor.execute("""
             UPDATE users
             SET username = ?, name = ?, email = ?, role = ?
@@ -211,14 +173,21 @@ def update_user(user_id):
 
         conn.commit()
         conn.close()
-
-        logging.info(f"User {user_id} updated successfully.")
         return jsonify({"message": "User updated successfully"}), 200
 
     except Exception as e:
-        logging.error(f"Error updating user: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+# 🟢 Delete User (Admin Only)
+@app.route('/delete-user/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "User deleted successfully"}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
