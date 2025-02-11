@@ -19,10 +19,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Connect to SQLite database
 def get_db_connection():
-    db_path = os.getenv("DATABASE_URL", "/tmp/scans.db")  # Use the new path
+    db_path = "/tmp/scans.db"  # Store the database in the temporary directory
     conn = sqlite3.connect(db_path, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
-    return conn
+    return
 
 
 # Create users table if it doesn't exist
