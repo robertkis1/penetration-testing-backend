@@ -6,30 +6,20 @@ import bcrypt
 import jwt
 import datetime
 
-with app.app_context():
-    db.create_all()  # Ensure database tables are created
-
+# ✅ Define Flask App FIRST
 app = Flask(__name__)
 CORS(app)
 
-# Load environment variables from Render
+# ✅ Load Environment Variables
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_default_secret_key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///users.db')
 app.config['JWT_EXPIRATION_TIME'] = int(os.getenv('JWT_EXPIRATION_TIME', 3600))
 BCRYPT_LOG_ROUNDS = int(os.getenv('BCRYPT_LOG_ROUNDS', 12))
 
+# ✅ Initialize Database
 db = SQLAlchemy(app)
 
-# Create the database tables if they don't exist
-with app.app_context():
-    db.create_all()
-
-# Default home route
-@app.route('/')
-def home():
-    return jsonify({"message": "Penetration Testing Backend API is running!"}), 200
-
-# Define User Model
+# ✅ Define User Model BEFORE creating tables
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(100), nullable=False)
@@ -39,8 +29,16 @@ class User(db.Model):
     role = db.Column(db.String(10), nullable=False)  # 'admin' or 'user'
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
+# ✅ Ensure Tables Are Created AFTER Defining Models
+with app.app_context():
+    db.create_all()
 
-# User Registration Route
+# ✅ Default Home Route
+@app.route('/')
+def home():
+    return jsonify({"message": "Penetration Testing Backend API is running!"}), 200
+
+# ✅ User Registration Route
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
@@ -63,7 +61,7 @@ def register():
 
     return jsonify({"message": "User registered successfully"}), 201
 
-# User Login Route
+# ✅ User Login Route
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
@@ -83,13 +81,13 @@ def login():
 
     return jsonify({"message": "Invalid credentials"}), 401
 
-# Get Users (Admin Only)
+# ✅ Get Users (Admin Only)
 @app.route('/admin/users', methods=['GET'])
 def get_users():
     users = User.query.all()
     return jsonify([{"id": u.id, "full_name": u.full_name, "email": u.email, "username": u.username, "role": u.role} for u in users])
 
-# Delete User (Admin)
+# ✅ Delete User (Admin)
 @app.route('/admin/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
     user = User.query.get(user_id)
@@ -99,7 +97,7 @@ def delete_user(user_id):
         return jsonify({"message": "User deleted successfully"}), 200
     return jsonify({"message": "User not found"}), 404
 
-# Update User Profile (User)
+# ✅ Update User Profile (User)
 @app.route('/update-profile', methods=['PUT'])
 def update_profile():
     data = request.json
@@ -116,6 +114,6 @@ def update_profile():
     
     return jsonify({"message": "User not found"}), 404
 
-# Run Application
+# ✅ Run Flask App
 if __name__ == '__main__':
     app.run(debug=True)
