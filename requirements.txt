@@ -3,4 +3,3 @@ flask-cors
 gunicorn
 bcrypt
 flask-jwt-extended
-sqlite3
