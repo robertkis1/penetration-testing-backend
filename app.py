@@ -10,26 +10,21 @@ app = Flask(__name__)
 CORS(app)
 
 # Load environment variables from Render
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_default_secret_key')  # Fallback for local testing
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_default_secret_key')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///users.db')
-app.config['JWT_EXPIRATION_TIME'] = int(os.getenv('JWT_EXPIRATION_TIME', 3600))  # 1 hour by default
-BCRYPT_LOG_ROUNDS = int(os.getenv('BCRYPT_LOG_ROUNDS', 12))  # Default bcrypt security rounds
+app.config['JWT_EXPIRATION_TIME'] = int(os.getenv('JWT_EXPIRATION_TIME', 3600))
+BCRYPT_LOG_ROUNDS = int(os.getenv('BCRYPT_LOG_ROUNDS', 12))
 
 db = SQLAlchemy(app)
-
-# User Model
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    full_name = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
-    role = db.Column(db.String(10), nullable=False)  # 'admin' or 'user'
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
 # Create the database tables if they don't exist
 with app.app_context():
     db.create_all()
+
+# Default home route
+@app.route('/')
+def home():
+    return jsonify({"message": "Penetration Testing Backend API is running!"}), 200
 
 # User Registration Route
 @app.route('/register', methods=['POST'])
