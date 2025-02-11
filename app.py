@@ -27,6 +27,10 @@ def get_db_connection():
 
 # Create users table if it doesn't exist
 def create_user_table():
+    db_path = "/tmp/scans.db"  # Ensure correct path
+    if not os.path.exists(db_path):  # Create the database if it doesn't exist
+        open(db_path, 'a').close()
+
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS users (
