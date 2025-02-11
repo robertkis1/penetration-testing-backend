@@ -6,6 +6,9 @@ import bcrypt
 import jwt
 import datetime
 
+with app.app_context():
+    db.create_all()  # Ensure database tables are created
+
 app = Flask(__name__)
 CORS(app)
 
@@ -25,6 +28,17 @@ with app.app_context():
 @app.route('/')
 def home():
     return jsonify({"message": "Penetration Testing Backend API is running!"}), 200
+
+# Define User Model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    full_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(10), nullable=False)  # 'admin' or 'user'
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
 
 # User Registration Route
 @app.route('/register', methods=['POST'])
