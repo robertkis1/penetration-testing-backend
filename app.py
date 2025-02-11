@@ -19,7 +19,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Connect to SQLite database
 def get_db_connection():
-    conn = sqlite3.connect('scans.db', check_same_thread=False, timeout=10)
+    db_path = os.path.join(os.getcwd(), 'scans.db')  # Store in project directory
+    conn = sqlite3.connect(db_path, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
