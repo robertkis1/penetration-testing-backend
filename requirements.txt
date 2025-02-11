@@ -2,6 +2,5 @@ flask
 flask-cors
 flask-sqlalchemy
 gunicorn
-sqlite3
 bcrypt
 jwt
