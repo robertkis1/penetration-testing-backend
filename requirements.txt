@@ -1,5 +1,7 @@
 flask
 flask-cors
+flask-sqlalchemy
 gunicorn
+sqlite3
 bcrypt
-flask-jwt-extended
+jwt
